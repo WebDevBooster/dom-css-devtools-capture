@@ -2,13 +2,34 @@
 
 A Chrome DevTools extension that captures the final live DOM and accessible CSS after you make changes in Chrome DevTools.
 
-## What it does
+## Important: this is not opened from the toolbar
 
-- Adds a new DevTools panel called **DOM + CSS Capture**.
-- Captures the current live DOM as `current-dom.html`.
-- Records DOM mutations while capture is running.
-- Serializes accessible CSS from `document.styleSheets`.
-- Exports everything in one ZIP file.
+This extension does **not** work like a normal Chrome toolbar extension.
+
+Pinning it to the Chrome toolbar is not how you use it. The panel appears **inside Chrome DevTools**, next to tabs like **Elements**, **Console**, **Sources** and **Network**.
+
+## How to open the DOM + CSS Capture panel
+
+1. Go to the web page you want to edit.
+2. Open Chrome DevTools:
+   - Mac: `Command + Option + I`
+   - Windows/Linux: `Ctrl + Shift + I`
+   - Or right-click the page and choose **Inspect**
+3. Look at the top row of DevTools tabs where you see **Elements**, **Console**, **Sources**, **Network**, etc.
+4. Look for a tab called **DOM + CSS Capture**.
+5. If you do not see it, click the `>>` overflow button on the DevTools tab bar and choose **DOM + CSS Capture** from the hidden tabs.
+6. If it still does not appear, close DevTools completely, refresh the page, then open DevTools again.
+
+## How to use it
+
+1. Open the page you want to edit.
+2. Open DevTools.
+3. Open the **DOM + CSS Capture** tab inside DevTools.
+4. Click **Start capture**.
+5. Make your HTML/DOM and CSS edits in DevTools.
+6. Return to the **DOM + CSS Capture** tab.
+7. Click **Export ZIP**.
+8. Send the exported ZIP to your developer.
 
 ## How to install
 
@@ -17,12 +38,28 @@ A Chrome DevTools extension that captures the final live DOM and accessible CSS 
 3. Turn on **Developer mode**.
 4. Click **Load unpacked**.
 5. Select the unzipped `dom-css-devtools-capture` folder.
-6. Open the web page you want to edit.
-7. Open Chrome DevTools.
-8. Open the **DOM + CSS Capture** panel.
-9. Click **Start capture** before editing.
-10. Make your edits in DevTools.
-11. Click **Export ZIP**.
+6. Open or refresh the web page you want to edit.
+7. Open DevTools and find the **DOM + CSS Capture** tab.
+
+## If the panel does not show up
+
+Try these in order:
+
+1. Make sure you selected the **folder**, not the ZIP file, when clicking **Load unpacked**.
+2. Go to `chrome://extensions` and confirm **DOM + CSS DevTools Capture** is enabled.
+3. Refresh the page you are editing.
+4. Close DevTools and open it again.
+5. Click the `>>` overflow menu in DevTools because the tab may be hidden.
+6. Do not test it on `chrome://extensions`, `chrome://settings`, the Chrome Web Store or some restricted browser pages. Chrome blocks extensions from running on many internal pages.
+7. In `chrome://extensions`, click **Reload** on this extension, then reopen DevTools.
+
+## What it does
+
+- Adds a new DevTools panel called **DOM + CSS Capture**.
+- Captures the current live DOM as `current-dom.html`.
+- Records DOM mutations while capture is running.
+- Serializes accessible CSS from `document.styleSheets`.
+- Exports everything in one ZIP file.
 
 ## What the exported ZIP contains
 
@@ -50,4 +87,3 @@ Known limits:
 - Cross-origin stylesheets may block access to `cssRules`.
 - Shadow DOM and iframe content may need separate handling.
 - Start capture before editing if you want a useful mutation log.
-
