@@ -1,6 +1,6 @@
 # DOM + CSS DevTools Capture
 
-A Chrome DevTools extension that captures the final live DOM, DOM mutations and accessible CSS rule-level changes after you make changes in Chrome DevTools. Version 1.2.3 exports a minimal `mutation-log.json` with the edited URL and the actual changes only.
+A Chrome DevTools extension that captures the final live DOM, DOM mutations and accessible CSS rule-level changes after you make changes in Chrome DevTools. Version 1.2.5 exports a minimal `mutation-log.json` with the edited URL and the actual changes only.
 
 ## Important: this is not opened from the toolbar
 

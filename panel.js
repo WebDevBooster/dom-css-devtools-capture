@@ -27,7 +27,7 @@ function evalInInspectedPage(source) {
 }
 
 const installerSource = `(${function () {
-  const CAPTURE_VERSION = "1.2.3";
+  const CAPTURE_VERSION = "1.2.5";
 
   function nowIso() {
     return new Date().toISOString();
@@ -372,18 +372,78 @@ const installerSource = `(${function () {
     return changes;
   }
 
+  function normalizeAttributeValue(name, value) {
+    if (value === null || value === undefined) return null;
+    const text = String(value);
+    if (name === "style") {
+      return text
+        .split(";")
+        .map(part => part.trim())
+        .filter(Boolean)
+        .join("; ") + (text.trim() ? ";" : "");
+    }
+    return text;
+  }
+
+  function normalizeInlineStyleHtml(html) {
+    if (!html) return html;
+    return String(html).replace(/style="([^"]*)"/gs, function (_, value) {
+      return `style="${normalizeAttributeValue("style", value)}"`;
+    });
+  }
+
+  function classTokens(value) {
+    return new Set(String(value || "").split(/\s+/).filter(Boolean));
+  }
+
+  function onlyClassTokensChanged(before, after, tokens) {
+    const beforeTokens = classTokens(before);
+    const afterTokens = classTokens(after);
+    const all = new Set([...beforeTokens, ...afterTokens]);
+    for (const token of all) {
+      if (!tokens.includes(token)) return false;
+    }
+    return true;
+  }
+
+  function isThemeToggleMutation(record) {
+    if (record.type === "attributes" && record.target && record.target.path === "html" && record.attributeName === "data-theme") {
+      return true;
+    }
+
+    if (record.type !== "childList" || !record.target || record.target.path !== "button#tg") return false;
+    const added = Array.isArray(record.addedNodes) ? record.addedNodes.map(node => node.html).join("").trim() : "";
+    const removed = Array.isArray(record.removedNodes) ? record.removedNodes.map(node => node.html).join("").trim() : "";
+    return ["Light", "Dark"].includes(added) && ["Light", "Dark"].includes(removed);
+  }
+
+  function isModalToggleMutation(record) {
+    if (record.type !== "attributes" || record.attributeName !== "class" || !record.target) return false;
+    if (record.target.path === "div#gn" && onlyClassTokensChanged(record.oldValue, record.newValue, ["modal", "open"])) {
+      return true;
+    }
+    return record.target.path === "html > body" && onlyClassTokensChanged(record.oldValue, record.newValue, ["noscroll"]);
+  }
+
+  function shouldSkipDomMutation(record) {
+    return isThemeToggleMutation(record) || isModalToggleMutation(record);
+  }
+
   function simplifyDomMutation(record) {
     const change = {
       type: "dom",
       action: record.type,
-      target: record.target && record.target.path ? record.target.path : null,
-      html: record.target && record.target.html ? record.target.html : null
+      target: record.target && record.target.path ? record.target.path : null
     };
+
+    if (record.target && record.target.html) {
+      change.html = normalizeInlineStyleHtml(record.target.html);
+    }
 
     if (record.type === "attributes") {
       change.attribute = record.attributeName;
-      change.before = record.oldValue;
-      change.after = record.newValue;
+      change.before = normalizeAttributeValue(record.attributeName, record.oldValue);
+      change.after = normalizeAttributeValue(record.attributeName, record.newValue);
     }
 
     if (record.type === "characterData") {
@@ -399,6 +459,38 @@ const installerSource = `(${function () {
     }
 
     return change;
+  }
+
+  function mergeDomAttributeChange(changes, indexByKey, change) {
+    const key = `${change.action}|${change.target}|${change.attribute}`;
+    const existingIndex = indexByKey.get(key);
+    if (existingIndex === undefined) {
+      indexByKey.set(key, changes.length);
+      changes.push(change);
+      return;
+    }
+
+    const existing = changes[existingIndex];
+    existing.after = change.after;
+    if (change.html) existing.html = change.html;
+  }
+
+  function simplifyDomMutations(mutations) {
+    const changes = [];
+    const attributeIndexByKey = new Map();
+
+    for (const record of mutations) {
+      if (shouldSkipDomMutation(record)) continue;
+      const change = simplifyDomMutation(record);
+      if (change.action === "attributes") {
+        if (change.before === change.after) continue;
+        mergeDomAttributeChange(changes, attributeIndexByKey, change);
+        continue;
+      }
+      changes.push(change);
+    }
+
+    return changes.filter(change => change.action !== "attributes" || change.before !== change.after);
   }
 
   function ruleTarget(change) {
@@ -430,7 +522,7 @@ const installerSource = `(${function () {
     return {
       url: meta.url,
       title: meta.title,
-      changes: mutations.map(simplifyDomMutation).concat(simplifyCssRuleChanges(cssRuleChanges))
+      changes: simplifyDomMutations(mutations).concat(simplifyCssRuleChanges(cssRuleChanges))
     };
   }
 
