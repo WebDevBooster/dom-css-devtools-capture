@@ -376,7 +376,8 @@ const installerSource = `(${function () {
     const change = {
       type: "dom",
       action: record.type,
-      target: record.target && record.target.path ? record.target.path : null
+      target: record.target && record.target.path ? record.target.path : null,
+      html: record.target && record.target.html ? record.target.html : null
     };
 
     if (record.type === "attributes") {
