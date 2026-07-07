@@ -1,6 +1,6 @@
 # DOM + CSS DevTools Capture
 
-A Chrome DevTools extension that captures the final live DOM and accessible CSS after you make changes in Chrome DevTools.
+A Chrome DevTools extension that captures the final live DOM, DOM mutations and accessible CSS rule-level changes after you make changes in Chrome DevTools.
 
 ## Important: this is not opened from the toolbar
 
@@ -31,6 +31,8 @@ Pinning it to the Chrome toolbar is not how you use it. The panel appears **insi
 7. Click **Export ZIP**.
 8. Send the exported ZIP to your developer.
 
+The main handoff file is now `mutation-log.json`. It contains both DOM mutations and detected accessible CSS rule changes in one combined log.
+
 ## How to install
 
 1. Unzip `dom-css-devtools-capture.zip`.
@@ -59,6 +61,7 @@ Try these in order:
 - Captures the current live DOM as `current-dom.html`.
 - Records DOM mutations while capture is running.
 - Serializes accessible CSS from `document.styleSheets`.
+- Compares CSS rules before and after, then exports actual changed rules when Chrome exposes them.
 - Exports everything in one ZIP file.
 
 ## What the exported ZIP contains
@@ -68,9 +71,11 @@ Try these in order:
 - `accessible-current-css.css`: all CSS rules the page can access.
 - `current-css-snapshot.json`: per-stylesheet CSS snapshot at export time.
 - `initial-css-snapshot.json`: per-stylesheet CSS snapshot when capture started.
+- `css-rule-changes.json`: actual accessible CSS rules that changed, including `beforeRule` and `afterRule`.
 - `css-change-summary.json`: before/after summary of stylesheet changes.
-- `css-change-events.json`: polling-based CSS change events.
-- `mutation-log.json`: DOM mutation log.
+- `css-change-events.json`: polling-based CSS change events, including rule-level changes when accessible.
+- `dom-mutation-log.json`: DOM mutation log only.
+- `mutation-log.json`: combined DOM mutation and CSS rule change log.
 - `full-export.json`: all captured data in one file.
 - `README.txt`: handoff explanation for your developer.
 
@@ -84,6 +89,7 @@ Known limits:
 
 - It cannot read Chrome DevTools' private internal Changes panel.
 - It cannot know which source template or component produced a DOM node.
+- CSS rule diffs only work for stylesheets Chrome exposes through `document.styleSheets`.
 - Cross-origin stylesheets may block access to `cssRules`.
 - Shadow DOM and iframe content may need separate handling.
-- Start capture before editing if you want a useful mutation log.
+- Start capture before editing if you want useful before/after CSS diffs and a useful mutation log.

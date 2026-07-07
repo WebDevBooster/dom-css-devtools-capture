@@ -136,6 +136,225 @@ const installerSource = `(${function () {
     return Array.from(document.styleSheets).map(serializeStyleSheet);
   }
 
+
+  function cssRuleTypeName(rule) {
+    const names = {
+      1: "STYLE_RULE",
+      2: "CHARSET_RULE",
+      3: "IMPORT_RULE",
+      4: "MEDIA_RULE",
+      5: "FONT_FACE_RULE",
+      6: "PAGE_RULE",
+      7: "KEYFRAMES_RULE",
+      8: "KEYFRAME_RULE",
+      10: "NAMESPACE_RULE",
+      11: "COUNTER_STYLE_RULE",
+      12: "SUPPORTS_RULE",
+      14: "FONT_FEATURE_VALUES_RULE",
+      15: "VIEWPORT_RULE"
+    };
+    return names[rule.type] || "RULE_" + rule.type;
+  }
+
+  function readStyleDeclarations(rule) {
+    const declarations = [];
+    try {
+      if (!rule.style) return declarations;
+      for (let i = 0; i < rule.style.length; i += 1) {
+        const name = rule.style[i];
+        declarations.push({
+          name,
+          value: rule.style.getPropertyValue(name),
+          priority: rule.style.getPropertyPriority(name) || ""
+        });
+      }
+    } catch (err) {
+      declarations.push({ error: err && err.message ? err.message : String(err) });
+    }
+    return declarations;
+  }
+
+  function ruleHeaderText(rule, typeName) {
+    try {
+      if (rule.selectorText) return rule.selectorText;
+      if (rule.conditionText) return `@${typeName} ${rule.conditionText}`;
+      if (rule.media && rule.media.mediaText) return `@media ${rule.media.mediaText}`;
+      if (rule.name) return `@${typeName} ${rule.name}`;
+    } catch (err) {
+      return "[header unavailable: " + err.message + "]";
+    }
+    return typeName;
+  }
+
+  function collectCssRules(ruleList, parentPath, parentContext) {
+    const out = [];
+    for (let i = 0; i < ruleList.length; i += 1) {
+      const rule = ruleList[i];
+      const path = parentPath ? `${parentPath}/${i}` : String(i);
+      const typeName = cssRuleTypeName(rule);
+      let nestedRules = null;
+      try {
+        nestedRules = rule.cssRules || null;
+      } catch (err) {
+        nestedRules = null;
+      }
+
+      const record = {
+        path,
+        parentPath: parentPath || null,
+        context: parentContext.slice(),
+        type: rule.type,
+        typeName,
+        headerText: ruleHeaderText(rule, typeName),
+        selectorText: rule.selectorText || null,
+        conditionText: rule.conditionText || null,
+        mediaText: rule.media && rule.media.mediaText ? rule.media.mediaText : null,
+        name: rule.name || null,
+        keyText: null,
+        styleDeclarations: readStyleDeclarations(rule),
+        childRuleCount: nestedRules ? nestedRules.length : 0,
+        cssText: rule.cssText || "",
+        comparisonText: ""
+      };
+
+      // For grouping rules like @media, do not compare the full cssText because that would
+      // duplicate every nested rule change at the parent level. Compare the group header only.
+      record.comparisonText = record.childRuleCount > 0
+        ? `${record.typeName}|${record.headerText}|${record.conditionText || ""}|${record.mediaText || ""}|${record.name || ""}`
+        : record.cssText;
+
+      out.push(record);
+
+      if (nestedRules && nestedRules.length) {
+        out.push(...collectCssRules(nestedRules, path, parentContext.concat(record.headerText)));
+      }
+    }
+    return out;
+  }
+
+  function makeSheetSource(sheet) {
+    return sheet.href || (sheet.ownerTag ? `<${sheet.ownerTag}> index ${sheet.index}` : `stylesheet ${sheet.index}`);
+  }
+
+  function sheetRuleMap(sheets) {
+    const map = new Map();
+    for (const sheet of sheets) {
+      if (!sheet || !sheet.accessible || !Array.isArray(sheet.rules)) continue;
+      const source = makeSheetSource(sheet);
+      for (const rule of sheet.rules) {
+        const key = `${sheet.index}:${rule.path}`;
+        map.set(key, { sheet, rule, source });
+      }
+    }
+    return map;
+  }
+
+  function compactRule(rule) {
+    if (!rule) return null;
+    return {
+      path: rule.path,
+      parentPath: rule.parentPath,
+      context: rule.context,
+      type: rule.type,
+      typeName: rule.typeName,
+      headerText: rule.headerText,
+      selectorText: rule.selectorText,
+      conditionText: rule.conditionText,
+      mediaText: rule.mediaText,
+      name: rule.name,
+      styleDeclarations: rule.styleDeclarations,
+      cssText: rule.cssText
+    };
+  }
+
+  function makeCssRuleDiff(initial, current) {
+    const changes = [];
+    const beforeMap = sheetRuleMap(initial);
+    const afterMap = sheetRuleMap(current);
+    const keys = new Set([...beforeMap.keys(), ...afterMap.keys()]);
+
+    for (const key of keys) {
+      const beforeEntry = beforeMap.get(key) || null;
+      const afterEntry = afterMap.get(key) || null;
+      const beforeRule = beforeEntry ? beforeEntry.rule : null;
+      const afterRule = afterEntry ? afterEntry.rule : null;
+      const sheet = afterEntry ? afterEntry.sheet : beforeEntry.sheet;
+      const source = afterEntry ? afterEntry.source : beforeEntry.source;
+
+      if (!beforeRule || !afterRule) {
+        changes.push({
+          status: beforeRule ? "removed" : "added",
+          sheetIndex: sheet.index,
+          source,
+          rulePath: beforeRule ? beforeRule.path : afterRule.path,
+          beforeRule: compactRule(beforeRule),
+          afterRule: compactRule(afterRule)
+        });
+        continue;
+      }
+
+      if (beforeRule.comparisonText !== afterRule.comparisonText) {
+        changes.push({
+          status: "changed",
+          sheetIndex: sheet.index,
+          source,
+          rulePath: afterRule.path,
+          beforeRule: compactRule(beforeRule),
+          afterRule: compactRule(afterRule)
+        });
+      }
+    }
+
+    const maxSheets = Math.max(initial.length, current.length);
+    for (let i = 0; i < maxSheets; i += 1) {
+      const before = initial[i] || null;
+      const after = current[i] || null;
+      if (!before || !after) continue;
+      if (before.accessible !== after.accessible || before.disabled !== after.disabled) {
+        changes.push({
+          status: "stylesheet-metadata-changed",
+          sheetIndex: i,
+          source: makeSheetSource(after || before),
+          accessibleBefore: before.accessible,
+          accessibleAfter: after.accessible,
+          disabledBefore: before.disabled,
+          disabledAfter: after.disabled,
+          beforeError: before.error || null,
+          afterError: after.error || null
+        });
+      }
+    }
+
+    return changes;
+  }
+
+  function makeCombinedChangeLog(meta, mutations, cssChangeEvents, cssRuleChanges) {
+    const domTimeline = mutations.map(record => Object.assign({ category: "dom", event: "dom-mutation" }, record));
+    const cssTimeline = cssChangeEvents.map(record => ({
+      time: record.time,
+      category: "css",
+      event: record.error ? "css-snapshot-error" : "css-rule-change",
+      changes: record.changes || [],
+      cumulativeChanges: record.cumulativeChanges || [],
+      error: record.error || null
+    }));
+
+    const timeline = domTimeline.concat(cssTimeline).sort((a, b) => {
+      const at = a.time || "";
+      const bt = b.time || "";
+      return at < bt ? -1 : at > bt ? 1 : 0;
+    });
+
+    return {
+      meta,
+      note: "This combines DOM mutations and detected accessible CSS rule changes. CSS is detected by stylesheet snapshots, not MutationObserver, so blocked cross-origin rules may be absent.",
+      timeline,
+      domMutations: mutations,
+      cssRuleChanges,
+      cssChangeEvents
+    };
+  }
+
   function joinedAccessibleCss(sheets) {
     return sheets.map(sheet => {
       const source = sheet.href || (sheet.ownerTag ? `<${sheet.ownerTag}> index ${sheet.index}` : `stylesheet ${sheet.index}`);
@@ -193,10 +412,12 @@ const installerSource = `(${function () {
       cssPollMs: 1000,
       cssPollLimit: 200,
       lastCssJoined: "",
+      lastCssSnapshot: null,
       observer: null,
       cssInterval: null
     };
     state.lastCssJoined = joinedAccessibleCss(state.initialCss);
+    state.lastCssSnapshot = state.initialCss;
 
     state.observer = new MutationObserver(function (mutationList) {
       for (const mutation of mutationList) {
@@ -245,12 +466,15 @@ const installerSource = `(${function () {
         if (joined !== state.lastCssJoined) {
           state.cssChangeEvents.push({
             time: nowIso(),
+            changes: makeCssRuleDiff(state.lastCssSnapshot || state.initialCss, current),
+            cumulativeChanges: makeCssRuleDiff(state.initialCss, current),
             summary: makeCssSummary(state.initialCss, current)
           });
           if (state.cssChangeEvents.length > state.cssPollLimit) {
             state.cssChangeEvents.splice(0, state.cssChangeEvents.length - state.cssPollLimit);
           }
           state.lastCssJoined = joined;
+          state.lastCssSnapshot = current;
         }
       } catch (err) {
         state.cssChangeEvents.push({ time: nowIso(), error: err.message || String(err) });
@@ -284,25 +508,30 @@ const installerSource = `(${function () {
       const currentCss = serializeAllStyleSheets();
       const currentHtml = document.documentElement.outerHTML;
       const cssSummary = makeCssSummary(state.initialCss, currentCss);
+      const cssRuleChanges = makeCssRuleDiff(state.initialCss, currentCss);
+      const meta = {
+        tool: "DOM + CSS DevTools Capture",
+        version: "1.1.0",
+        exportedAt: nowIso(),
+        startedAt: state.startedAt,
+        url: location.href,
+        originalUrlAtStart: state.url,
+        title: document.title,
+        userAgent: navigator.userAgent,
+        note: "This is a live DOM/CSS snapshot for developer handoff. It is not a clean patch against the site's source files."
+      };
+      const combinedChangeLog = makeCombinedChangeLog(meta, state.mutations, state.cssChangeEvents, cssRuleChanges);
       return {
-        meta: {
-          tool: "DOM + CSS DevTools Capture",
-          version: "1.0.0",
-          exportedAt: nowIso(),
-          startedAt: state.startedAt,
-          url: location.href,
-          originalUrlAtStart: state.url,
-          title: document.title,
-          userAgent: navigator.userAgent,
-          note: "This is a live DOM/CSS snapshot for developer handoff. It is not a clean patch against the site's source files."
-        },
+        meta,
         initialHtml: state.initialHtml,
         currentHtml,
         initialCss: state.initialCss,
         currentCss,
         accessibleCssText: joinedAccessibleCss(currentCss),
         cssChangeSummary: cssSummary,
+        cssRuleChanges,
         cssChangeEvents: state.cssChangeEvents,
+        combinedChangeLog,
         mutations: state.mutations
       };
     };
@@ -519,9 +748,11 @@ exportBtn.addEventListener("click", async () => {
       { name: "accessible-current-css.css", content: payload.accessibleCssText },
       { name: "current-css-snapshot.json", content: JSON.stringify(payload.currentCss, null, 2) },
       { name: "initial-css-snapshot.json", content: JSON.stringify(payload.initialCss, null, 2) },
+      { name: "css-rule-changes.json", content: JSON.stringify(payload.cssRuleChanges, null, 2) },
       { name: "css-change-summary.json", content: JSON.stringify(payload.cssChangeSummary, null, 2) },
       { name: "css-change-events.json", content: JSON.stringify(payload.cssChangeEvents, null, 2) },
-      { name: "mutation-log.json", content: JSON.stringify(payload.mutations, null, 2) },
+      { name: "dom-mutation-log.json", content: JSON.stringify(payload.mutations, null, 2) },
+      { name: "mutation-log.json", content: JSON.stringify(payload.combinedChangeLog, null, 2) },
       { name: "full-export.json", content: JSON.stringify(payload, null, 2) }
     ];
 
@@ -536,7 +767,8 @@ exportBtn.addEventListener("click", async () => {
       stylesheetCount: payload.currentCss.length,
       accessibleStylesheetCount: payload.currentCss.filter(sheet => sheet.accessible).length,
       inaccessibleStylesheetCount: payload.currentCss.filter(sheet => !sheet.accessible).length,
-      cssChangeSummaryCount: payload.cssChangeSummary.length
+      cssChangeSummaryCount: payload.cssChangeSummary.length,
+      cssRuleChangeCount: payload.cssRuleChanges.length
     });
   } catch (err) {
     setStatus("Could not export: " + err.message);
