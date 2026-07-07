@@ -27,7 +27,7 @@ function evalInInspectedPage(source) {
 }
 
 const installerSource = `(${function () {
-  const CAPTURE_VERSION = "1.2.2";
+  const CAPTURE_VERSION = "1.2.3";
 
   function nowIso() {
     return new Date().toISOString();
@@ -372,30 +372,64 @@ const installerSource = `(${function () {
     return changes;
   }
 
-  function makeCombinedChangeLog(meta, mutations, cssChangeEvents, cssRuleChanges) {
-    const domTimeline = mutations.map(record => Object.assign({ category: "dom", event: "dom-mutation" }, record));
-    const cssTimeline = cssRuleChanges.length ? [{
-      time: meta.exportedAt,
-      category: "css",
-      event: "css-rule-changes",
-      changes: cssRuleChanges
-    }] : [];
-    const cssErrors = cssChangeEvents.filter(record => record && record.error);
+  function simplifyDomMutation(record) {
+    const change = {
+      type: "dom",
+      action: record.type,
+      target: record.target && record.target.path ? record.target.path : null
+    };
 
-    const timeline = domTimeline.concat(cssTimeline).sort((a, b) => {
-      const at = a.time || "";
-      const bt = b.time || "";
-      return at < bt ? -1 : at > bt ? 1 : 0;
-    });
+    if (record.type === "attributes") {
+      change.attribute = record.attributeName;
+      change.before = record.oldValue;
+      change.after = record.newValue;
+    }
 
+    if (record.type === "characterData") {
+      change.before = record.oldValue;
+      change.after = record.newValue;
+    }
+
+    if (record.type === "childList") {
+      const added = Array.isArray(record.addedNodes) ? record.addedNodes.map(node => node.html).filter(Boolean) : [];
+      const removed = Array.isArray(record.removedNodes) ? record.removedNodes.map(node => node.html).filter(Boolean) : [];
+      if (added.length) change.added = added;
+      if (removed.length) change.removed = removed;
+    }
+
+    return change;
+  }
+
+  function ruleTarget(change) {
+    const rule = change.rule || change.afterRule || change.beforeRule || {};
+    return rule.selectorText || rule.headerText || rule.name || rule.mediaText || rule.conditionText || null;
+  }
+
+  function simplifyCssRuleChanges(cssRuleChanges) {
+    const changes = [];
+
+    for (const change of cssRuleChanges) {
+      if (change.status === "stylesheet-metadata-changed") continue;
+      const properties = Array.isArray(change.declarationChanges) ? change.declarationChanges : [];
+      for (const declaration of properties) {
+        changes.push({
+          type: "css",
+          selector: ruleTarget(change),
+          property: declaration.property,
+          before: declaration.before ? declaration.before.value : null,
+          after: declaration.after ? declaration.after.value : null
+        });
+      }
+    }
+
+    return changes;
+  }
+
+  function makeMinimalChangeLog(meta, mutations, cssRuleChanges) {
     return {
-      meta,
-      note: "This combines DOM mutations with the final accessible CSS rule changes. CSS is detected by stylesheet snapshots, not MutationObserver, so blocked cross-origin rules may be absent.",
-      timeline,
-      domMutations: mutations,
-      cssRuleChanges,
-      cssChangeDetectionSummary: cssChangeEvents.find(record => record && !record.error) || null,
-      cssSnapshotErrors: cssErrors
+      url: meta.url,
+      title: meta.title,
+      changes: mutations.map(simplifyDomMutation).concat(simplifyCssRuleChanges(cssRuleChanges))
     };
   }
 
@@ -581,7 +615,7 @@ const installerSource = `(${function () {
         userAgent: navigator.userAgent,
         note: "This is a live DOM/CSS snapshot for developer handoff. It is not a clean patch against the site's source files."
       };
-      const combinedChangeLog = makeCombinedChangeLog(meta, state.mutations, state.cssChangeEvents, cssRuleChanges);
+      const combinedChangeLog = makeMinimalChangeLog(meta, state.mutations, cssRuleChanges);
       return {
         meta,
         initialHtml: state.initialHtml,
@@ -762,7 +796,7 @@ function makeZip(files) {
 }
 
 function buildReadme(payload) {
-  return `DOM + CSS DevTools Capture export\n\nURL: ${payload.meta.url}\nTitle: ${payload.meta.title}\nStarted at: ${payload.meta.startedAt}\nExported at: ${payload.meta.exportedAt}\n\nFiles in this ZIP:\n\n- current-dom.html\n  The live DOM at export time. This includes DOM edits made in the Elements panel and runtime DOM changes made by scripts.\n\n- initial-dom.html\n  The live DOM when capture started. Useful only if capture was started before editing.\n\n- accessible-current-css.css\n  All stylesheet rules that page JavaScript could access at export time. Cross-origin/protected stylesheets may be omitted or marked inaccessible.\n\n- current-css-snapshot.json\n  Per-stylesheet CSS snapshot at export time, including inaccessible stylesheet metadata and errors.\n\n- initial-css-snapshot.json\n  Per-stylesheet CSS snapshot when capture started.\n\n- css-rule-changes.json\n  Final accessible CSS rule changes only, with rule identity and property-level before/after values.\n\n- css-change-summary.json\n  A simple before/after summary of stylesheet changes detected during export.\n\n- css-change-events.json\n  Compact polling detection summary. It does not include intermediate rule values.\n\n- dom-mutation-log.json\n  DOM mutations observed while capture was running.\n\n- mutation-log.json\n  DOM mutations plus one final CSS rule-change entry. It does not include intermediate CSS polling transitions.\n\n- full-export.json\n  Everything above in one structured JSON file.\n\nImportant caveats:\n\nThis is not a source-code patch. It is a live browser snapshot. A developer still needs to map the final DOM and CSS back into the site templates, components and source CSS files.\n\nDevTools' Elements panel changes mutate the live DOM. This extension records that live DOM and observed mutations, but it cannot tell which React/Vue/template/PHP/Liquid/etc. source file caused the original markup.\n\nCSS rules from cross-origin stylesheets may be blocked by browser security and cannot always be exported through page JavaScript.\n`;
+  return `DOM + CSS DevTools Capture export\n\nURL: ${payload.meta.url}\nTitle: ${payload.meta.title}\nStarted at: ${payload.meta.startedAt}\nExported at: ${payload.meta.exportedAt}\n\nFiles in this ZIP:\n\n- current-dom.html\n  The live DOM at export time. This includes DOM edits made in the Elements panel and runtime DOM changes made by scripts.\n\n- initial-dom.html\n  The live DOM when capture started. Useful only if capture was started before editing.\n\n- accessible-current-css.css\n  All stylesheet rules that page JavaScript could access at export time. Cross-origin/protected stylesheets may be omitted or marked inaccessible.\n\n- current-css-snapshot.json\n  Per-stylesheet CSS snapshot at export time, including inaccessible stylesheet metadata and errors.\n\n- initial-css-snapshot.json\n  Per-stylesheet CSS snapshot when capture started.\n\n- css-rule-changes.json\n  Final accessible CSS rule changes only, with rule identity and property-level before/after values.\n\n- css-change-summary.json\n  A simple before/after summary of stylesheet changes detected during export.\n\n- css-change-events.json\n  Compact polling detection summary. It does not include intermediate rule values.\n\n- dom-mutation-log.json\n  Raw DOM mutations observed while capture was running.\n\n- mutation-log.json\n  Minimal AI handoff log with the page URL and a flat list of DOM/CSS changes.\n\n- full-export.json\n  Everything above in one structured JSON file.\n\nImportant caveats:\n\nThis is not a source-code patch. It is a live browser snapshot. A developer still needs to map the final DOM and CSS back into the site templates, components and source CSS files.\n\nDevTools' Elements panel changes mutate the live DOM. This extension records that live DOM and observed mutations, but it cannot tell which React/Vue/template/PHP/Liquid/etc. source file caused the original markup.\n\nCSS rules from cross-origin stylesheets may be blocked by browser security and cannot always be exported through page JavaScript.\n`;
 }
 
 function downloadBlob(blob, filename) {

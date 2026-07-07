@@ -10,7 +10,7 @@
       <h1>DOM + CSS Capture</h1>
       <p class="lede">
         Start before you edit in Elements. Export creates a ZIP containing the current live DOM,
-        accessible CSS snapshots, actual accessible CSS rule changes and a combined mutation/change log.
+        accessible CSS snapshots, actual accessible CSS rule changes and a minimal mutation/change log.
         You can also export only the mutation log JSON.
       </p>
 
@@ -34,7 +34,7 @@
           <li>A before/after DOM snapshot when capture was started before editing.</li>
           <li>DOM changes made in the Elements panel, recorded through a MutationObserver.</li>
           <li>Accessible CSS rules from <code>document.styleSheets</code>, including before/after rule diffs when the browser exposes them.</li>
-          <li>A combined <code>mutation-log.json</code> containing DOM mutations and final detected CSS rule changes.</li>
+          <li>A minimal <code>mutation-log.json</code> containing the edited URL and actual changes.</li>
         </ul>
       </section>
 

@@ -1,6 +1,6 @@
 # DOM + CSS DevTools Capture
 
-A Chrome DevTools extension that captures the final live DOM, DOM mutations and accessible CSS rule-level changes after you make changes in Chrome DevTools. Version 1.2.2 exports CSS changes once per changed rule/property instead of every polling transition and can export `mutation-log.json` directly.
+A Chrome DevTools extension that captures the final live DOM, DOM mutations and accessible CSS rule-level changes after you make changes in Chrome DevTools. Version 1.2.3 exports a minimal `mutation-log.json` with the edited URL and the actual changes only.
 
 ## Important: this is not opened from the toolbar
 
@@ -28,10 +28,10 @@ Pinning it to the Chrome toolbar is not how you use it. The panel appears **insi
 4. Click **Start capture**.
 5. Make your HTML/DOM and CSS edits in DevTools.
 6. Return to the **DOM + CSS Capture** tab.
-7. Click **Export ZIP**, or click **Export mutation-log.json** if you only need the combined mutation/change log.
+7. Click **Export ZIP**, or click **Export mutation-log.json** if you only need the minimal mutation/change log.
 8. Send the exported file to your developer.
 
-The main handoff file is now `mutation-log.json`. It contains DOM mutations and the final detected accessible CSS rule changes in one combined log.
+The main handoff file is now `mutation-log.json`. It contains the edited page URL, title and a minimal list of DOM/CSS changes.
 
 ## How to install
 
@@ -75,7 +75,7 @@ Try these in order:
 - `css-change-summary.json`: before/after summary of stylesheet changes.
 - `css-change-events.json`: compact polling detection summary. It does not include intermediate rule values.
 - `dom-mutation-log.json`: DOM mutation log only.
-- `mutation-log.json`: combined DOM mutation and final CSS rule change log. Look for the single timeline entry where `category` is `css`.
+- `mutation-log.json`: minimal AI handoff log with the page URL and a flat list of DOM/CSS changes.
 - `full-export.json`: all captured data in one file.
 - `README.txt`: handoff explanation for your developer.
 
