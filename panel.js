@@ -26,6 +26,8 @@ function evalInInspectedPage(source) {
 }
 
 const installerSource = `(${function () {
+  const CAPTURE_VERSION = "1.2.0";
+
   function nowIso() {
     return new Date().toISOString();
   }
@@ -114,7 +116,9 @@ const installerSource = `(${function () {
       ownerId: owner && owner.id ? owner.id : null,
       ownerClass: owner && owner.className ? String(owner.className) : null,
       accessible: true,
-      cssText: ""
+      cssText: "",
+      rules: [],
+      ruleCount: 0
     };
 
     try {
@@ -124,6 +128,8 @@ const installerSource = `(${function () {
         pieces.push(rules[i].cssText);
       }
       out.cssText = pieces.join("\n");
+      out.rules = collectCssRules(rules, "", []);
+      out.ruleCount = out.rules.length;
     } catch (err) {
       out.accessible = false;
       out.error = err && err.message ? err.message : String(err);
@@ -267,6 +273,39 @@ const installerSource = `(${function () {
     };
   }
 
+  function declarationMap(rule) {
+    const map = new Map();
+    if (!rule || !Array.isArray(rule.styleDeclarations)) return map;
+    for (const item of rule.styleDeclarations) {
+      if (!item || !item.name) continue;
+      map.set(item.name, {
+        value: item.value || "",
+        priority: item.priority || ""
+      });
+    }
+    return map;
+  }
+
+  function makeDeclarationDiff(beforeRule, afterRule) {
+    const before = declarationMap(beforeRule);
+    const after = declarationMap(afterRule);
+    const names = new Set([...before.keys(), ...after.keys()]);
+    const changes = [];
+    for (const name of names) {
+      const b = before.get(name) || null;
+      const a = after.get(name) || null;
+      if (!b || !a || b.value !== a.value || b.priority !== a.priority) {
+        changes.push({
+          property: name,
+          status: b && a ? "changed" : b ? "removed" : "added",
+          before: b,
+          after: a
+        });
+      }
+    }
+    return changes;
+  }
+
   function makeCssRuleDiff(initial, current) {
     const changes = [];
     const beforeMap = sheetRuleMap(initial);
@@ -287,8 +326,10 @@ const installerSource = `(${function () {
           sheetIndex: sheet.index,
           source,
           rulePath: beforeRule ? beforeRule.path : afterRule.path,
+          selectorText: afterRule ? afterRule.selectorText : beforeRule.selectorText,
           beforeRule: compactRule(beforeRule),
-          afterRule: compactRule(afterRule)
+          afterRule: compactRule(afterRule),
+          declarationChanges: makeDeclarationDiff(beforeRule, afterRule)
         });
         continue;
       }
@@ -299,8 +340,10 @@ const installerSource = `(${function () {
           sheetIndex: sheet.index,
           source,
           rulePath: afterRule.path,
+          selectorText: afterRule.selectorText,
           beforeRule: compactRule(beforeRule),
-          afterRule: compactRule(afterRule)
+          afterRule: compactRule(afterRule),
+          declarationChanges: makeDeclarationDiff(beforeRule, afterRule)
         });
       }
     }
@@ -397,11 +440,22 @@ const installerSource = `(${function () {
 
   function installCapture() {
     if (window.__domCssCapture && window.__domCssCapture.__installed) {
-      return window.__domCssCapture.status();
+      if (window.__domCssCapture.version === CAPTURE_VERSION) {
+        return window.__domCssCapture.status();
+      }
+      try {
+        if (typeof window.__domCssCapture.stop === "function") {
+          window.__domCssCapture.stop();
+        }
+      } catch (err) {
+        // Ignore stale capture cleanup failures and reinstall below.
+      }
+      window.__domCssCapture = null;
     }
 
     const state = {
       __installed: true,
+      version: CAPTURE_VERSION,
       startedAt: nowIso(),
       url: location.href,
       title: document.title,
@@ -485,6 +539,7 @@ const installerSource = `(${function () {
       const currentCss = serializeAllStyleSheets();
       return {
         installed: true,
+        version: state.version,
         startedAt: state.startedAt,
         url: state.url,
         title: state.title,
@@ -511,7 +566,7 @@ const installerSource = `(${function () {
       const cssRuleChanges = makeCssRuleDiff(state.initialCss, currentCss);
       const meta = {
         tool: "DOM + CSS DevTools Capture",
-        version: "1.1.0",
+        version: CAPTURE_VERSION,
         exportedAt: nowIso(),
         startedAt: state.startedAt,
         url: location.href,

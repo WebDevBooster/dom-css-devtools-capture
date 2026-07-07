@@ -1,6 +1,6 @@
 # DOM + CSS DevTools Capture
 
-A Chrome DevTools extension that captures the final live DOM, DOM mutations and accessible CSS rule-level changes after you make changes in Chrome DevTools.
+A Chrome DevTools extension that captures the final live DOM, DOM mutations and accessible CSS rule-level changes after you make changes in Chrome DevTools. Version 1.2.0 fixes rule-level CSS detection for accessible stylesheets, including inline `<style>` blocks.
 
 ## Important: this is not opened from the toolbar
 
@@ -61,7 +61,7 @@ Try these in order:
 - Captures the current live DOM as `current-dom.html`.
 - Records DOM mutations while capture is running.
 - Serializes accessible CSS from `document.styleSheets`.
-- Compares CSS rules before and after, then exports actual changed rules when Chrome exposes them.
+- Compares CSS rules before and after, then exports actual changed rules and property-level declaration changes when Chrome exposes them.
 - Exports everything in one ZIP file.
 
 ## What the exported ZIP contains
@@ -71,11 +71,11 @@ Try these in order:
 - `accessible-current-css.css`: all CSS rules the page can access.
 - `current-css-snapshot.json`: per-stylesheet CSS snapshot at export time.
 - `initial-css-snapshot.json`: per-stylesheet CSS snapshot when capture started.
-- `css-rule-changes.json`: actual accessible CSS rules that changed, including `beforeRule` and `afterRule`.
+- `css-rule-changes.json`: actual accessible CSS rules that changed, including `beforeRule`, `afterRule` and `declarationChanges`.
 - `css-change-summary.json`: before/after summary of stylesheet changes.
 - `css-change-events.json`: polling-based CSS change events, including rule-level changes when accessible.
 - `dom-mutation-log.json`: DOM mutation log only.
-- `mutation-log.json`: combined DOM mutation and CSS rule change log.
+- `mutation-log.json`: combined DOM mutation and CSS rule change log. Look for timeline entries where `category` is `css` and `declarationChanges` contains properties such as `max-width`.
 - `full-export.json`: all captured data in one file.
 - `README.txt`: handoff explanation for your developer.
 
@@ -93,3 +93,16 @@ Known limits:
 - Cross-origin stylesheets may block access to `cssRules`.
 - Shadow DOM and iframe content may need separate handling.
 - Start capture before editing if you want useful before/after CSS diffs and a useful mutation log.
+
+
+## Updating from an older version
+
+After replacing the extension folder or reloading the unpacked extension:
+
+1. Go to `chrome://extensions`.
+2. Click **Reload** on **DOM + CSS DevTools Capture**.
+3. Refresh the page you are editing.
+4. Close DevTools completely and open it again.
+5. Click **Start capture** again before making edits.
+
+The page has to be refreshed because an older capture script can remain inside the already-open page until the page reloads.
