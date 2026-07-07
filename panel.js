@@ -2,6 +2,7 @@ const statusEl = document.getElementById("status");
 const startBtn = document.getElementById("startBtn");
 const stopBtn = document.getElementById("stopBtn");
 const exportBtn = document.getElementById("exportBtn");
+const exportMutationLogBtn = document.getElementById("exportMutationLogBtn");
 const copySelectedBtn = document.getElementById("copySelectedBtn");
 
 function setStatus(message, data) {
@@ -26,7 +27,7 @@ function evalInInspectedPage(source) {
 }
 
 const installerSource = `(${function () {
-  const CAPTURE_VERSION = "1.2.0";
+  const CAPTURE_VERSION = "1.2.2";
 
   function nowIso() {
     return new Date().toISOString();
@@ -255,7 +256,7 @@ const installerSource = `(${function () {
     return map;
   }
 
-  function compactRule(rule) {
+  function describeRule(rule) {
     if (!rule) return null;
     return {
       path: rule.path,
@@ -267,9 +268,7 @@ const installerSource = `(${function () {
       selectorText: rule.selectorText,
       conditionText: rule.conditionText,
       mediaText: rule.mediaText,
-      name: rule.name,
-      styleDeclarations: rule.styleDeclarations,
-      cssText: rule.cssText
+      name: rule.name
     };
   }
 
@@ -321,29 +320,31 @@ const installerSource = `(${function () {
       const source = afterEntry ? afterEntry.source : beforeEntry.source;
 
       if (!beforeRule || !afterRule) {
+        const declarationChanges = makeDeclarationDiff(beforeRule, afterRule);
         changes.push({
           status: beforeRule ? "removed" : "added",
           sheetIndex: sheet.index,
           source,
           rulePath: beforeRule ? beforeRule.path : afterRule.path,
-          selectorText: afterRule ? afterRule.selectorText : beforeRule.selectorText,
-          beforeRule: compactRule(beforeRule),
-          afterRule: compactRule(afterRule),
-          declarationChanges: makeDeclarationDiff(beforeRule, afterRule)
+          rule: describeRule(afterRule || beforeRule),
+          beforeRule: describeRule(beforeRule),
+          afterRule: describeRule(afterRule),
+          declarationChanges
         });
         continue;
       }
 
       if (beforeRule.comparisonText !== afterRule.comparisonText) {
+        const declarationChanges = makeDeclarationDiff(beforeRule, afterRule);
         changes.push({
           status: "changed",
           sheetIndex: sheet.index,
           source,
           rulePath: afterRule.path,
-          selectorText: afterRule.selectorText,
-          beforeRule: compactRule(beforeRule),
-          afterRule: compactRule(afterRule),
-          declarationChanges: makeDeclarationDiff(beforeRule, afterRule)
+          rule: describeRule(afterRule),
+          beforeRule: describeRule(beforeRule),
+          afterRule: describeRule(afterRule),
+          declarationChanges
         });
       }
     }
@@ -373,14 +374,13 @@ const installerSource = `(${function () {
 
   function makeCombinedChangeLog(meta, mutations, cssChangeEvents, cssRuleChanges) {
     const domTimeline = mutations.map(record => Object.assign({ category: "dom", event: "dom-mutation" }, record));
-    const cssTimeline = cssChangeEvents.map(record => ({
-      time: record.time,
+    const cssTimeline = cssRuleChanges.length ? [{
+      time: meta.exportedAt,
       category: "css",
-      event: record.error ? "css-snapshot-error" : "css-rule-change",
-      changes: record.changes || [],
-      cumulativeChanges: record.cumulativeChanges || [],
-      error: record.error || null
-    }));
+      event: "css-rule-changes",
+      changes: cssRuleChanges
+    }] : [];
+    const cssErrors = cssChangeEvents.filter(record => record && record.error);
 
     const timeline = domTimeline.concat(cssTimeline).sort((a, b) => {
       const at = a.time || "";
@@ -390,11 +390,12 @@ const installerSource = `(${function () {
 
     return {
       meta,
-      note: "This combines DOM mutations and detected accessible CSS rule changes. CSS is detected by stylesheet snapshots, not MutationObserver, so blocked cross-origin rules may be absent.",
+      note: "This combines DOM mutations with the final accessible CSS rule changes. CSS is detected by stylesheet snapshots, not MutationObserver, so blocked cross-origin rules may be absent.",
       timeline,
       domMutations: mutations,
       cssRuleChanges,
-      cssChangeEvents
+      cssChangeDetectionSummary: cssChangeEvents.find(record => record && !record.error) || null,
+      cssSnapshotErrors: cssErrors
     };
   }
 
@@ -463,6 +464,7 @@ const installerSource = `(${function () {
       initialCss: serializeAllStyleSheets(),
       mutations: [],
       cssChangeEvents: [],
+      cssChangeDetectionCount: 0,
       cssPollMs: 1000,
       cssPollLimit: 200,
       lastCssJoined: "",
@@ -518,20 +520,24 @@ const installerSource = `(${function () {
         const current = serializeAllStyleSheets();
         const joined = joinedAccessibleCss(current);
         if (joined !== state.lastCssJoined) {
-          state.cssChangeEvents.push({
-            time: nowIso(),
-            changes: makeCssRuleDiff(state.lastCssSnapshot || state.initialCss, current),
-            cumulativeChanges: makeCssRuleDiff(state.initialCss, current),
-            summary: makeCssSummary(state.initialCss, current)
+          const time = nowIso();
+          const existingSummary = state.cssChangeEvents.find(record => record && !record.error) || null;
+          state.cssChangeDetectionCount += 1;
+          state.cssChangeEvents = state.cssChangeEvents.filter(record => record && record.error);
+          state.cssChangeEvents.unshift({
+            status: "stylesheet-content-changed",
+            firstDetectedAt: existingSummary ? existingSummary.firstDetectedAt : time,
+            lastDetectedAt: time,
+            count: state.cssChangeDetectionCount
           });
-          if (state.cssChangeEvents.length > state.cssPollLimit) {
-            state.cssChangeEvents.splice(0, state.cssChangeEvents.length - state.cssPollLimit);
-          }
           state.lastCssJoined = joined;
           state.lastCssSnapshot = current;
         }
       } catch (err) {
         state.cssChangeEvents.push({ time: nowIso(), error: err.message || String(err) });
+        if (state.cssChangeEvents.length > state.cssPollLimit) {
+          state.cssChangeEvents.splice(0, state.cssChangeEvents.length - state.cssPollLimit);
+        }
       }
     }, state.cssPollMs);
 
@@ -544,7 +550,7 @@ const installerSource = `(${function () {
         url: state.url,
         title: state.title,
         mutationCount: state.mutations.length,
-        cssChangeEventCount: state.cssChangeEvents.length,
+        cssChangeEventCount: state.cssChangeDetectionCount,
         stylesheetCount: currentCss.length,
         accessibleStylesheetCount: currentCss.filter(sheet => sheet.accessible).length,
         inaccessibleStylesheetCount: currentCss.filter(sheet => !sheet.accessible).length
@@ -756,7 +762,7 @@ function makeZip(files) {
 }
 
 function buildReadme(payload) {
-  return `DOM + CSS DevTools Capture export\n\nURL: ${payload.meta.url}\nTitle: ${payload.meta.title}\nStarted at: ${payload.meta.startedAt}\nExported at: ${payload.meta.exportedAt}\n\nFiles in this ZIP:\n\n- current-dom.html\n  The live DOM at export time. This includes DOM edits made in the Elements panel and runtime DOM changes made by scripts.\n\n- initial-dom.html\n  The live DOM when capture started. Useful only if capture was started before editing.\n\n- accessible-current-css.css\n  All stylesheet rules that page JavaScript could access at export time. Cross-origin/protected stylesheets may be omitted or marked inaccessible.\n\n- current-css-snapshot.json\n  Per-stylesheet CSS snapshot at export time, including inaccessible stylesheet metadata and errors.\n\n- initial-css-snapshot.json\n  Per-stylesheet CSS snapshot when capture started.\n\n- css-change-summary.json\n  A simple before/after summary of stylesheet changes detected during export.\n\n- css-change-events.json\n  Polling-based CSS change events detected during capture.\n\n- mutation-log.json\n  DOM mutations observed while capture was running.\n\n- full-export.json\n  Everything above in one structured JSON file.\n\nImportant caveats:\n\nThis is not a source-code patch. It is a live browser snapshot. A developer still needs to map the final DOM and CSS back into the site templates, components and source CSS files.\n\nDevTools' Elements panel changes mutate the live DOM. This extension records that live DOM and observed mutations, but it cannot tell which React/Vue/template/PHP/Liquid/etc. source file caused the original markup.\n\nCSS rules from cross-origin stylesheets may be blocked by browser security and cannot always be exported through page JavaScript.\n`;
+  return `DOM + CSS DevTools Capture export\n\nURL: ${payload.meta.url}\nTitle: ${payload.meta.title}\nStarted at: ${payload.meta.startedAt}\nExported at: ${payload.meta.exportedAt}\n\nFiles in this ZIP:\n\n- current-dom.html\n  The live DOM at export time. This includes DOM edits made in the Elements panel and runtime DOM changes made by scripts.\n\n- initial-dom.html\n  The live DOM when capture started. Useful only if capture was started before editing.\n\n- accessible-current-css.css\n  All stylesheet rules that page JavaScript could access at export time. Cross-origin/protected stylesheets may be omitted or marked inaccessible.\n\n- current-css-snapshot.json\n  Per-stylesheet CSS snapshot at export time, including inaccessible stylesheet metadata and errors.\n\n- initial-css-snapshot.json\n  Per-stylesheet CSS snapshot when capture started.\n\n- css-rule-changes.json\n  Final accessible CSS rule changes only, with rule identity and property-level before/after values.\n\n- css-change-summary.json\n  A simple before/after summary of stylesheet changes detected during export.\n\n- css-change-events.json\n  Compact polling detection summary. It does not include intermediate rule values.\n\n- dom-mutation-log.json\n  DOM mutations observed while capture was running.\n\n- mutation-log.json\n  DOM mutations plus one final CSS rule-change entry. It does not include intermediate CSS polling transitions.\n\n- full-export.json\n  Everything above in one structured JSON file.\n\nImportant caveats:\n\nThis is not a source-code patch. It is a live browser snapshot. A developer still needs to map the final DOM and CSS back into the site templates, components and source CSS files.\n\nDevTools' Elements panel changes mutate the live DOM. This extension records that live DOM and observed mutations, but it cannot tell which React/Vue/template/PHP/Liquid/etc. source file caused the original markup.\n\nCSS rules from cross-origin stylesheets may be blocked by browser security and cannot always be exported through page JavaScript.\n`;
 }
 
 function downloadBlob(blob, filename) {
@@ -770,10 +776,24 @@ function downloadBlob(blob, filename) {
   window.setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
+function downloadJson(data, filename) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  downloadBlob(blob, filename);
+}
+
+async function getExportPayload() {
+  let payload = await exportCapture();
+  if (!payload) {
+    await ensureInstalled();
+    payload = await exportCapture();
+  }
+  return payload;
+}
+
 startBtn.addEventListener("click", async () => {
   try {
     const status = await ensureInstalled();
-    setStatus("Capture is running. Make your Elements/CSS edits, then click Export ZIP.", status);
+    setStatus("Capture is running. Make your Elements/CSS edits, then export the ZIP or mutation log.", status);
   } catch (err) {
     setStatus("Could not start capture: " + err.message);
   }
@@ -790,11 +810,7 @@ stopBtn.addEventListener("click", async () => {
 
 exportBtn.addEventListener("click", async () => {
   try {
-    let payload = await exportCapture();
-    if (!payload) {
-      await ensureInstalled();
-      payload = await exportCapture();
-    }
+    const payload = await getExportPayload();
 
     const files = [
       { name: "README.txt", content: buildReadme(payload) },
@@ -827,6 +843,23 @@ exportBtn.addEventListener("click", async () => {
     });
   } catch (err) {
     setStatus("Could not export: " + err.message);
+  }
+});
+
+exportMutationLogBtn.addEventListener("click", async () => {
+  try {
+    const payload = await getExportPayload();
+    const filename = `mutation-log-${safeFilenamePart(payload.meta.url)}-${timestampForFilename()}.json`;
+    downloadJson(payload.combinedChangeLog, filename);
+
+    setStatus("Exported mutation-log.json.", {
+      filename,
+      url: payload.meta.url,
+      mutationCount: payload.mutations.length,
+      cssRuleChangeCount: payload.cssRuleChanges.length
+    });
+  } catch (err) {
+    setStatus("Could not export mutation-log.json: " + err.message);
   }
 });
 

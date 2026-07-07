@@ -11,12 +11,14 @@
       <p class="lede">
         Start before you edit in Elements. Export creates a ZIP containing the current live DOM,
         accessible CSS snapshots, actual accessible CSS rule changes and a combined mutation/change log.
+        You can also export only the mutation log JSON.
       </p>
 
       <section class="controls">
         <button id="startBtn">Start capture</button>
         <button id="stopBtn">Stop capture</button>
         <button id="exportBtn" class="primary">Export ZIP</button>
+        <button id="exportMutationLogBtn">Export mutation-log.json</button>
         <button id="copySelectedBtn">Copy selected element HTML</button>
       </section>
 
@@ -32,7 +34,7 @@
           <li>A before/after DOM snapshot when capture was started before editing.</li>
           <li>DOM changes made in the Elements panel, recorded through a MutationObserver.</li>
           <li>Accessible CSS rules from <code>document.styleSheets</code>, including before/after rule diffs when the browser exposes them.</li>
-          <li>A combined <code>mutation-log.json</code> containing both DOM mutations and detected CSS rule changes.</li>
+          <li>A combined <code>mutation-log.json</code> containing DOM mutations and final detected CSS rule changes.</li>
         </ul>
       </section>
 

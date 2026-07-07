@@ -1,6 +1,6 @@
 # DOM + CSS DevTools Capture
 
-A Chrome DevTools extension that captures the final live DOM, DOM mutations and accessible CSS rule-level changes after you make changes in Chrome DevTools. Version 1.2.0 fixes rule-level CSS detection for accessible stylesheets, including inline `<style>` blocks.
+A Chrome DevTools extension that captures the final live DOM, DOM mutations and accessible CSS rule-level changes after you make changes in Chrome DevTools. Version 1.2.2 exports CSS changes once per changed rule/property instead of every polling transition and can export `mutation-log.json` directly.
 
 ## Important: this is not opened from the toolbar
 
@@ -28,10 +28,10 @@ Pinning it to the Chrome toolbar is not how you use it. The panel appears **insi
 4. Click **Start capture**.
 5. Make your HTML/DOM and CSS edits in DevTools.
 6. Return to the **DOM + CSS Capture** tab.
-7. Click **Export ZIP**.
-8. Send the exported ZIP to your developer.
+7. Click **Export ZIP**, or click **Export mutation-log.json** if you only need the combined mutation/change log.
+8. Send the exported file to your developer.
 
-The main handoff file is now `mutation-log.json`. It contains both DOM mutations and detected accessible CSS rule changes in one combined log.
+The main handoff file is now `mutation-log.json`. It contains DOM mutations and the final detected accessible CSS rule changes in one combined log.
 
 ## How to install
 
@@ -61,7 +61,7 @@ Try these in order:
 - Captures the current live DOM as `current-dom.html`.
 - Records DOM mutations while capture is running.
 - Serializes accessible CSS from `document.styleSheets`.
-- Compares CSS rules before and after, then exports actual changed rules and property-level declaration changes when Chrome exposes them.
+- Compares CSS rules before and after, then exports one final property-level before/after record per changed rule when Chrome exposes it.
 - Exports everything in one ZIP file.
 
 ## What the exported ZIP contains
@@ -71,11 +71,11 @@ Try these in order:
 - `accessible-current-css.css`: all CSS rules the page can access.
 - `current-css-snapshot.json`: per-stylesheet CSS snapshot at export time.
 - `initial-css-snapshot.json`: per-stylesheet CSS snapshot when capture started.
-- `css-rule-changes.json`: actual accessible CSS rules that changed, including `beforeRule`, `afterRule` and `declarationChanges`.
+- `css-rule-changes.json`: actual accessible CSS rules that changed, with rule identity and property-level before/after values.
 - `css-change-summary.json`: before/after summary of stylesheet changes.
-- `css-change-events.json`: polling-based CSS change events, including rule-level changes when accessible.
+- `css-change-events.json`: compact polling detection summary. It does not include intermediate rule values.
 - `dom-mutation-log.json`: DOM mutation log only.
-- `mutation-log.json`: combined DOM mutation and CSS rule change log. Look for timeline entries where `category` is `css` and `declarationChanges` contains properties such as `max-width`.
+- `mutation-log.json`: combined DOM mutation and final CSS rule change log. Look for the single timeline entry where `category` is `css`.
 - `full-export.json`: all captured data in one file.
 - `README.txt`: handoff explanation for your developer.
 

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "DOM + CSS DevTools Capture",
-  "version": "1.2.0",
+  "version": "1.2.2",
   "description": "DevTools panel that captures live DOM mutations and accessible CSS rule-level changes for developer handoff.",
   "devtools_page": "devtools.html",
   "icons": {
