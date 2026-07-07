@@ -20,6 +20,8 @@ Pinning it to the Chrome toolbar is not how you use it. The panel appears **insi
 5. If you do not see it, click the `>>` overflow button on the DevTools tab bar and choose **DOM + CSS Capture** from the hidden tabs.
 6. If it still does not appear, close DevTools completely, refresh the page, then open DevTools again.
 
+**NOTE: a browser restart is required after installation and each update.**
+
 ## How to use it
 
 1. Open the page you want to edit.
