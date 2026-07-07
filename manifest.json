@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "DOM + CSS DevTools Capture",
+  "version": "1.0.0",
+  "description": "DevTools panel that captures live DOM mutations and accessible CSS snapshots for developer handoff.",
+  "devtools_page": "devtools.html",
+  "icons": {
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}
